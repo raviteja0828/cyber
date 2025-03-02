@@ -8,6 +8,7 @@ colorama==0.4.6
 contourpy==1.2.1
 cx-Oracle==8.3.0
 cycler==0.12.1
+cryptography==3.3.2
 distlib==0.3.8
 filelock==3.13.4
 flatbuffers==24.3.25
@@ -52,6 +53,7 @@ pathlib==1.0.1
 pillow==10.2.0
 platformdirs==4.1.0
 prompt-toolkit==3.0.43
+PyMySQL==1.1.1
 protobuf==4.25.3
 psutil==5.9.8
 pure-eval==0.2.2
