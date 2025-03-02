@@ -14,9 +14,12 @@ from pathlib import Path
 import os
 import dj_database_url
 import django_heroku 
+from urllib.parse import urlparse
+import pymysql 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+pymysql.install_as_MySQLdb()
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
@@ -75,23 +78,29 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'cyberproj.wsgi.application'
 
+DATABASE_URL = "mysql://avnadmin:AVNS_AB1SeLvBZBEImdUAi86@ashu0728-merakanapalliraviteja86-5735.l.aivencloud.com:21005/defaultdb?ssl-mode=REQUIRED"
 
-# Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+
+url = urlparse(DATABASE_URL)
 
 DATABASES = {
     'default': {
-    'ENGINE': 'django.db.backends.mysql',
-    'NAME': 'django_db',
-	'USER': 'root',
-	'PASSWORD': 'root',
-	'HOST': 'localhost',
-	'PORT': '3306'
+        'ENGINE': 'django.db.backends.mysql',  # Use MySQL engine for the database
+        'NAME': url.path[1:],  # Extract database name from the URL
+        'USER': url.username,  # Extract username from the URL
+        'PASSWORD': url.password,  # Extract password from the URL
+        'HOST': url.hostname,  # Extract host from the URL
+        'PORT': url.port,  # Extract port from the URL
+        'OPTIONS': {
+            'ssl': {
+                'ca': 'ca.pem',  # Ensure you have the path to the CA certificate for SSL
+            },
+        },
     }
 }
 
-
+    
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
