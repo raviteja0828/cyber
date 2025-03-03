@@ -81,11 +81,11 @@ WSGI_APPLICATION = 'cyberproj.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',  # Use MySQL engine for the database
-        'NAME': ,  # Extract database name from the URL
-        'USER': admin,  # Extract username from the URL
-        'PASSWORD': Ashu2807,  # Extract password from the URL
-        'HOST': database.cl8g0ygwit8o.eu-north-1.rds.amazonaws.com,  # Extract host from the URL
-        'PORT': url.3306,  # Extract port from the URL
+        'NAME': 'cyberdb',  # Extract database name from the URL
+        'USER': 'admin',  # Extract username from the URL
+        'PASSWORD': 'Ashu2807',  # Extract password from the URL
+        'HOST': 'database.cl8g0ygwit8o.eu-north-1.rds.amazonaws.com',  # Extract host from the URL
+        'PORT': '3306',  # Extract port from the URL
     }
 }
 
