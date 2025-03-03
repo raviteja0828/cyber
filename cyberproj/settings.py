@@ -78,25 +78,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'cyberproj.wsgi.application'
 
-DATABASE_URL = "mysql://avnadmin:AVNS_AB1SeLvBZBEImdUAi86@ashu0728-merakanapalliraviteja86-5735.l.aivencloud.com:21005/defaultdb?ssl-mode=REQUIRED"
-
-
-
-url = urlparse(DATABASE_URL)
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',  # Use MySQL engine for the database
-        'NAME': url.path[1:],  # Extract database name from the URL
-        'USER': url.username,  # Extract username from the URL
-        'PASSWORD': url.password,  # Extract password from the URL
-        'HOST': url.hostname,  # Extract host from the URL
-        'PORT': url.port,  # Extract port from the URL
-        'OPTIONS': {
-            'ssl': {
-                'ca': 'ca.pem',  # Ensure you have the path to the CA certificate for SSL
-            },
-        },
+        'NAME': ,  # Extract database name from the URL
+        'USER': admin,  # Extract username from the URL
+        'PASSWORD': Ashu2807,  # Extract password from the URL
+        'HOST': database.cl8g0ygwit8o.eu-north-1.rds.amazonaws.com,  # Extract host from the URL
+        'PORT': url.3306,  # Extract port from the URL
     }
 }
 
