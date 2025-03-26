@@ -37,8 +37,10 @@ urlpatterns = [
     path('cyber-security',user_views.cyber_sec,name="cyber_sec"),
     path('otp-verification',user_views.otp,name="otp"),
     path('user/feedback/',user_views.feedback,name="feedback"),
-    path('cyber-security/result/<int:prediction_id>/', user_views.cyber_sec_result, name='cyber_sec_result'),    
-
+    path('cyber-security/result/<int:prediction_id>/', user_views.cyber_sec_result, name='cyber_sec_result'),
+    path('sqlinjection/',user_views.sqlinjection,name="sqlinjection"),
+    path('check-sql-injection/', user_views.check_sql_injection, name='check_sql_injection'),
+    
 
     # admin urls
     path('admin-dashboard',admin_views.index,name="admin_dashboard"),
